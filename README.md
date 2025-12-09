@@ -1,5 +1,18 @@
 # Sudoku Master
 
+Projet réalisé dans le cadre de la formation **ING1 Informatique** à l'**EILCO Calais**.
+
+## Description
+Ce projet est une implémentation complète du jeu de Sudoku en langage C, dotée d'une interface graphique intuitive utilisant la bibliothèque GTK. Il offre des fonctionnalités d'authentification, de sauvegarde de partie et de validation de grille.
+
+## Auteurs
+*   **EL MAHDI ALOUI**
+*   **Akram Ouadghiri Bencherif**
+*   **Hajar Brech**
+
+## Remerciements
+Nous tenons à exprimer notre gratitude envers l'ensemble de l'équipe pédagogique et nos enseignants pour leur encadrement, leur soutien et les connaissances transmises tout au long de ce projet.
+
 ## How to Open and Build
 
 ### Option 1: CLion (Recommended)
