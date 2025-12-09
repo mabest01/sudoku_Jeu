@@ -1,0 +1,28 @@
+# Build artifacts
+*.exe
+*.o
+*.obj
+*.dll
+*.so
+*.dylib
+
+# User data
+*.dat
+utilisateurs.dat
+jeu_*.dat
+
+# IDE directories
+.idea/
+.vscode/
+cmake-build-debug/
+cmake-build-release/
+*.cbp
+*.layout
+*.depend
+bin/
+obj/
+backup/
+
+# OS generated
+Thumbs.db
+.DS_Store

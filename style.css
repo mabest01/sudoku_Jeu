@@ -1,0 +1,99 @@
+/* Thème Sombre Moderne */
+window {
+    background-color: #1e1e2e;
+    color: #cdd6f4;
+    font-family: 'Segoe UI', sans-serif;
+}
+
+button {
+    background-image: none;
+    background-color: #313244;
+    color: #cdd6f4;
+    border-radius: 8px;
+    padding: 10px 20px;
+    border: none;
+    font-weight: bold;
+    transition: all 0.2s;
+}
+
+button:hover {
+    background-color: #45475a;
+}
+
+button:active {
+    background-color: #585b70;
+}
+
+entry {
+    background-color: #313244;
+    color: #cdd6f4;
+    border: 1px solid #45475a;
+    border-radius: 4px;
+    padding: 5px;
+}
+
+entry:focus {
+    border-color: #89b4fa;
+}
+
+.titre {
+    font-size: 32px;
+    font-weight: bold;
+    color: #89b4fa;
+    margin-bottom: 20px;
+}
+
+.case-sudoku {
+    font-size: 24px;
+    font-weight: bold;
+    min-width: 45px;
+    min-height: 45px;
+    padding: 0;
+    margin: 1px;
+    background-color: #313244;
+    color: #cdd6f4;
+    border-radius: 4px;
+}
+
+.case-sudoku:focus {
+    background-color: #45475a;
+    border: 2px solid #89b4fa;
+}
+
+.case-fixe {
+    background-color: #181825;
+    color: #6c7086;
+}
+
+.case-utilisateur {
+    color: #89b4fa;
+}
+
+.correct {
+    background-color: #a6e3a1;
+    color: #1e1e2e;
+}
+
+.incorrect {
+    background-color: #f38ba8;
+    color: #1e1e2e;
+}
+
+.notes {
+    font-size: 10px;
+    color: #9399b2;
+}
+
+.panneau-highscore {
+    background-color: #181825;
+    border-radius: 12px;
+    padding: 20px;
+}
+
+.label-erreur {
+    color: #f38ba8;
+}
+
+.label-succes {
+    color: #a6e3a1;
+}
