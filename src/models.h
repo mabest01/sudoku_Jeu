@@ -27,7 +27,9 @@ typedef struct {
   int solution[N][N]; // Solution
   int initial[N][N];  // État initial (pour savoir quelles cases sont fixes)
   int notes[N][N];    // Masque de bits pour les notes (1-9)
-  int temps_ecoule;   // Secondes
+  int temps_restant;  // Secondes restantes (ou écoulées si infini)
+  int temps_initial;  // Pour le calcul du score
+  int vies_restantes; // -1 si infini
   int erreurs_commises;
   bool est_termine;
 } EtatJeu;

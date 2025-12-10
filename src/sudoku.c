@@ -3,7 +3,6 @@
 #include <string.h>
 #include <time.h>
 
-
 // --- Logique Sudoku (Backtracking) ---
 
 static bool est_sur(int grille[N][N], int ligne, int col, int num) {
@@ -66,14 +65,21 @@ void jeu_generer(EtatJeu *jeu, Difficulte diff) {
   memset(jeu->notes, 0, sizeof(jeu->notes));
 
   // Générer grille complète
+  // Remplir les boîtes diagonales (indépendantes)
   for (int i = 0; i < N; i = i + 3) {
+    int nums[9] = {1, 2, 3, 4, 5, 6, 7, 8, 9};
+    // Shuffle
+    for (int k = 0; k < 9; k++) {
+      int r = rand() % 9;
+      int temp = nums[k];
+      nums[k] = nums[r];
+      nums[r] = temp;
+    }
+    // Remplir la boîte 3x3
+    int idx = 0;
     for (int r = 0; r < 3; r++) {
       for (int c = 0; c < 3; c++) {
-        int num;
-        do {
-          num = (rand() % 9) + 1;
-        } while (!est_sur(jeu->grille, i + r, i + c, num));
-        jeu->grille[i + r][i + c] = num;
+        jeu->grille[i + r][i + c] = nums[idx++];
       }
     }
   }
@@ -112,9 +118,26 @@ void jeu_generer(EtatJeu *jeu, Difficulte diff) {
   memcpy(jeu->initial, jeu->grille, sizeof(jeu->grille));
 
   jeu->difficulte = diff;
-  jeu->temps_ecoule = 0;
   jeu->erreurs_commises = 0;
   jeu->est_termine = false;
+
+  switch (diff) {
+  case DIFFICULTE_FACILE:
+    jeu->temps_initial = 0; // Infini / Pas de temps
+    jeu->temps_restant = 0;
+    jeu->vies_restantes = -1; // Infini
+    break;
+  case DIFFICULTE_MOYEN:
+    jeu->temps_initial = 8 * 60;
+    jeu->temps_restant = 8 * 60;
+    jeu->vies_restantes = 5;
+    break;
+  case DIFFICULTE_DIFFICILE:
+    jeu->temps_initial = 3 * 60;
+    jeu->temps_restant = 3 * 60;
+    jeu->vies_restantes = 3;
+    break;
+  }
 }
 
 bool jeu_verifier_coup(EtatJeu *jeu, int ligne, int col, int num) {

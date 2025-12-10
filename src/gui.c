@@ -59,16 +59,11 @@ static void sur_clic_connexion(GtkWidget *widget, gpointer data) {
     // Mise à jour Highscores
     Utilisateur *u = auth_obtenir_utilisateur_courant();
     char buf[64];
-    sprintf(buf, "🟢 Facile : %ds",
-            u->meilleur_score_facile == 999999 ? 0 : u->meilleur_score_facile);
+    sprintf(buf, "🟢 Facile : %d pts", u->meilleur_score_facile);
     gtk_label_set_text(GTK_LABEL(label_highscore_facile), buf);
-    sprintf(buf, "🟡 Moyen : %ds",
-            u->meilleur_score_moyen == 999999 ? 0 : u->meilleur_score_moyen);
+    sprintf(buf, "🟡 Moyen : %d pts", u->meilleur_score_moyen);
     gtk_label_set_text(GTK_LABEL(label_highscore_moyen), buf);
-    sprintf(buf, "🔴 Difficile : %ds",
-            u->meilleur_score_difficile == 999999
-                ? 0
-                : u->meilleur_score_difficile);
+    sprintf(buf, "🔴 Difficile : %d pts", u->meilleur_score_difficile);
     gtk_label_set_text(GTK_LABEL(label_highscore_difficile), buf);
 
     basculer_vers_page("tableau_de_bord");
@@ -145,6 +140,46 @@ static GtkWidget *creer_page_connexion() {
 
 // --- Écran Tableau de Bord ---
 
+static gboolean sur_tick_chrono(gpointer data) {
+  if (jeu_courant.temps_initial == 0) {
+    // Mode Facile : Pas de limite de temps
+    gtk_label_set_text(GTK_LABEL(label_chrono), "⏱️ Temps : ∞");
+    return TRUE;
+  }
+
+  if (jeu_courant.temps_restant > 0) {
+    jeu_courant.temps_restant--;
+    char buf[32];
+    sprintf(buf, "⏱️ Temps : %02d:%02d", jeu_courant.temps_restant / 60,
+            jeu_courant.temps_restant % 60);
+    gtk_label_set_text(GTK_LABEL(label_chrono), buf);
+  } else {
+    // Temps écoulé -> Game Over
+    gtk_label_set_text(GTK_LABEL(label_erreurs), "💀 TEMPS ÉCOULÉ !");
+    gtk_style_context_add_class(gtk_widget_get_style_context(label_erreurs),
+                                "label-erreur");
+    // Désactiver la grille
+    for (int i = 0; i < 9; i++)
+      for (int j = 0; j < 9; j++)
+        gtk_widget_set_sensitive(GTK_WIDGET(entrees_jeu[i][j]), FALSE);
+    return FALSE; // Arrêter le timer
+  }
+  return TRUE;
+}
+
+static void mettre_a_jour_vies() {
+  char buf[64];
+  if (jeu_courant.vies_restantes == -1) {
+    sprintf(buf, "❤️ Vies : ∞");
+  } else {
+    strcpy(buf, "❤️ Vies : ");
+    for (int i = 0; i < jeu_courant.vies_restantes; i++) {
+      strcat(buf, "❤️");
+    }
+  }
+  gtk_label_set_text(GTK_LABEL(label_erreurs), buf);
+}
+
 static void sur_demarrage_nouvelle_partie(GtkWidget *widget, gpointer data) {
   int diff = GPOINTER_TO_INT(data);
   jeu_generer(&jeu_courant, (Difficulte)diff);
@@ -176,25 +211,22 @@ static void sur_demarrage_nouvelle_partie(GtkWidget *widget, gpointer data) {
     }
   }
 
+  // Réinitialiser UI
+  gtk_label_set_text(GTK_LABEL(label_erreurs), "");
+  gtk_style_context_remove_class(gtk_widget_get_style_context(label_erreurs),
+                                 "label-succes");
+  gtk_style_context_remove_class(gtk_widget_get_style_context(label_erreurs),
+                                 "label-erreur");
+  mettre_a_jour_vies();
+
   // Réinitialiser le chrono
   if (id_chrono > 0)
     g_source_remove(id_chrono);
 
   // Callback simple pour le chrono
-  id_chrono = g_timeout_add_seconds(
-      1, (GSourceFunc)({
-        gboolean cb(gpointer d) {
-          jeu_courant.temps_ecoule++;
-          char buf[32];
-          sprintf(buf, "⏱️ Temps : %02d:%02d", jeu_courant.temps_ecoule / 60,
-                  jeu_courant.temps_ecoule % 60);
-          gtk_label_set_text(GTK_LABEL(label_chrono), buf);
-
-          return TRUE;
-        }
-        cb;
-      }),
-      NULL);
+  id_chrono = g_timeout_add_seconds(1, sur_tick_chrono, NULL);
+  // Appel immédiat pour afficher le temps initial
+  sur_tick_chrono(NULL);
 
   basculer_vers_page("jeu");
 }
@@ -202,19 +234,50 @@ static void sur_demarrage_nouvelle_partie(GtkWidget *widget, gpointer data) {
 static void sur_clic_charger_partie(GtkWidget *widget, gpointer data) {
   Utilisateur *u = auth_obtenir_utilisateur_courant();
   if (charger_jeu(u->nom_utilisateur, &jeu_courant)) {
-    sur_demarrage_nouvelle_partie(NULL,
-                                  GINT_TO_POINTER(jeu_courant.difficulte));
+    // On relance comme une nouvelle partie mais on écrase la grille
+    // Attention : il faut préserver le temps restant et les vies du chargement
+    // jeu_generer est appelé dans sur_demarrage... donc on ne peut pas
+    // l'utiliser directement On va copier manuellement la logique d'init UI
 
-    // Écraser avec les valeurs sauvegardées
+    // Init UI Grille
     for (int i = 0; i < 9; i++) {
       for (int j = 0; j < 9; j++) {
-        if (jeu_courant.grille[i][j] != 0) {
+        GtkEntry *entree = GTK_ENTRY(entrees_jeu[i][j]);
+        GtkStyleContext *ctx = gtk_widget_get_style_context(GTK_WIDGET(entree));
+
+        gtk_style_context_remove_class(ctx, "case-fixe");
+        gtk_style_context_remove_class(ctx, "case-utilisateur");
+        gtk_style_context_remove_class(ctx, "correct");
+        gtk_style_context_remove_class(ctx, "incorrect");
+
+        if (jeu_courant.initial[i][j] != 0) {
           char buf[2];
-          sprintf(buf, "%d", jeu_courant.grille[i][j]);
-          gtk_entry_set_text(GTK_ENTRY(entrees_jeu[i][j]), buf);
+          sprintf(buf, "%d", jeu_courant.initial[i][j]);
+          gtk_entry_set_text(entree, buf);
+          gtk_widget_set_sensitive(GTK_WIDGET(entree), FALSE);
+          gtk_style_context_add_class(ctx, "case-fixe");
+        } else {
+          if (jeu_courant.grille[i][j] != 0) {
+            char buf[2];
+            sprintf(buf, "%d", jeu_courant.grille[i][j]);
+            gtk_entry_set_text(entree, buf);
+          } else {
+            gtk_entry_set_text(entree, "");
+          }
+          gtk_widget_set_sensitive(GTK_WIDGET(entree), TRUE);
+          gtk_style_context_add_class(ctx, "case-utilisateur");
         }
       }
     }
+
+    mettre_a_jour_vies();
+
+    if (id_chrono > 0)
+      g_source_remove(id_chrono);
+    id_chrono = g_timeout_add_seconds(1, sur_tick_chrono, NULL);
+    sur_tick_chrono(NULL);
+
+    basculer_vers_page("jeu");
   }
 }
 
@@ -234,7 +297,7 @@ static GtkWidget *creer_page_tableau_de_bord() {
   gtk_box_pack_start(GTK_BOX(boite), label_bienvenue, FALSE, FALSE, 0);
 
   // Highscores
-  GtkWidget *cadre_hs = gtk_frame_new("🏆 Meilleurs Scores");
+  GtkWidget *cadre_hs = gtk_frame_new("🏆 Meilleurs Scores (Points)");
   GtkWidget *boite_hs = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
   gtk_container_add(GTK_CONTAINER(cadre_hs), boite_hs);
   gtk_container_set_border_width(GTK_CONTAINER(boite_hs), 10);
@@ -253,21 +316,20 @@ static GtkWidget *creer_page_tableau_de_bord() {
 
   // Boutons
   GtkWidget *btn_facile =
-      gtk_button_new_with_label("🟢 Nouvelle Partie (Facile)");
+      gtk_button_new_with_label("🟢 Facile (∞ Vies, Pas de temps)");
   g_signal_connect(btn_facile, "clicked",
                    G_CALLBACK(sur_demarrage_nouvelle_partie),
                    GINT_TO_POINTER(DIFFICULTE_FACILE));
   gtk_box_pack_start(GTK_BOX(boite), btn_facile, FALSE, FALSE, 5);
 
-  GtkWidget *btn_moyen =
-      gtk_button_new_with_label("🟡 Nouvelle Partie (Moyen)");
+  GtkWidget *btn_moyen = gtk_button_new_with_label("🟡 Moyen (5 Vies, 8 min)");
   g_signal_connect(btn_moyen, "clicked",
                    G_CALLBACK(sur_demarrage_nouvelle_partie),
                    GINT_TO_POINTER(DIFFICULTE_MOYEN));
   gtk_box_pack_start(GTK_BOX(boite), btn_moyen, FALSE, FALSE, 5);
 
   GtkWidget *btn_difficile =
-      gtk_button_new_with_label("🔴 Nouvelle Partie (Difficile)");
+      gtk_button_new_with_label("🔴 Difficile (3 Vies, 3 min)");
   g_signal_connect(btn_difficile, "clicked",
                    G_CALLBACK(sur_demarrage_nouvelle_partie),
                    GINT_TO_POINTER(DIFFICULTE_DIFFICILE));
@@ -321,19 +383,34 @@ static void sur_changement_case(GtkEditable *editable, gpointer data) {
 
     if (jeu_est_termine(&jeu_courant)) {
       // Victoire !
+      // Calcul du score : Base (1000) + (TempsRestant * 10) + (ViesRestantes *
+      // 500)
+      int score = 1000;
+      if (jeu_courant.temps_initial > 0) {
+        score += jeu_courant.temps_restant * 10;
+      }
+      if (jeu_courant.vies_restantes > 0) {
+        score += jeu_courant.vies_restantes * 500;
+      }
+
       Utilisateur *u = auth_obtenir_utilisateur_courant();
       if (jeu_courant.difficulte == DIFFICULTE_FACILE &&
-          jeu_courant.temps_ecoule < u->meilleur_score_facile)
-        u->meilleur_score_facile = jeu_courant.temps_ecoule;
+          score > u->meilleur_score_facile)
+        u->meilleur_score_facile = score;
       if (jeu_courant.difficulte == DIFFICULTE_MOYEN &&
-          jeu_courant.temps_ecoule < u->meilleur_score_moyen)
-        u->meilleur_score_moyen = jeu_courant.temps_ecoule;
+          score > u->meilleur_score_moyen)
+        u->meilleur_score_moyen = score;
       if (jeu_courant.difficulte == DIFFICULTE_DIFFICILE &&
-          jeu_courant.temps_ecoule < u->meilleur_score_difficile)
-        u->meilleur_score_difficile = jeu_courant.temps_ecoule;
+          score > u->meilleur_score_difficile)
+        u->meilleur_score_difficile = score;
       sauvegarder_utilisateurs(auth_obtenir_tous_utilisateurs(NULL), 0);
 
-      gtk_label_set_text(GTK_LABEL(label_erreurs), "🎉 VICTOIRE ! 🎉");
+      if (id_chrono > 0)
+        g_source_remove(id_chrono);
+
+      char msg[128];
+      sprintf(msg, "🎉 VICTOIRE ! Score : %d", score);
+      gtk_label_set_text(GTK_LABEL(label_erreurs), msg);
       gtk_style_context_add_class(gtk_widget_get_style_context(label_erreurs),
                                   "label-succes");
     }
@@ -341,15 +418,22 @@ static void sur_changement_case(GtkEditable *editable, gpointer data) {
     gtk_style_context_add_class(ctx, "incorrect");
     gtk_style_context_remove_class(ctx, "correct");
 
-    char buf[32];
-    sprintf(buf, "❌ Erreurs : %d", jeu_courant.erreurs_commises);
-    gtk_label_set_text(GTK_LABEL(label_erreurs), buf);
+    if (jeu_courant.vies_restantes != -1) {
+      jeu_courant.vies_restantes--;
+      mettre_a_jour_vies();
 
-    // Vérifier condition de défaite
-    if (jeu_courant.difficulte == DIFFICULTE_DIFFICILE &&
-        jeu_courant.erreurs_commises >= 3) {
-      gtk_label_set_text(GTK_LABEL(label_erreurs),
-                         "💀 GAME OVER (Trop d'erreurs)");
+      if (jeu_courant.vies_restantes <= 0) {
+        gtk_label_set_text(GTK_LABEL(label_erreurs),
+                           "💀 GAME OVER (Plus de vies)");
+        gtk_style_context_add_class(gtk_widget_get_style_context(label_erreurs),
+                                    "label-erreur");
+        // Désactiver grille
+        for (int i = 0; i < 9; i++)
+          for (int j = 0; j < 9; j++)
+            gtk_widget_set_sensitive(GTK_WIDGET(entrees_jeu[i][j]), FALSE);
+        if (id_chrono > 0)
+          g_source_remove(id_chrono);
+      }
     }
   }
 
@@ -368,8 +452,8 @@ static GtkWidget *creer_page_jeu() {
 
   // En-tête
   GtkWidget *en_tete = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-  label_chrono = gtk_label_new("⏱️ Temps : 00:00");
-  label_erreurs = gtk_label_new("❌ Erreurs : 0");
+  label_chrono = gtk_label_new("⏱️ Temps : --:--");
+  label_erreurs = gtk_label_new("❤️ Vies : ---");
   gtk_box_pack_start(GTK_BOX(en_tete), label_chrono, TRUE, FALSE, 0);
   gtk_box_pack_start(GTK_BOX(en_tete), label_erreurs, TRUE, FALSE, 0);
   gtk_box_pack_start(GTK_BOX(boite), en_tete, FALSE, FALSE, 10);
