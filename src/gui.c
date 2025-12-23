@@ -1,12 +1,15 @@
 #include "gui.h"
+#include "audio.h"
 #include "auth.h"
 #include "storage.h"
 #include "sudoku.h"
 #include <gtk/gtk.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-// Widgets UI Globaux
 static GtkWidget *pile_principale;
+static GtkWidget *fenetre_solution;
 static GtkWidget *fenetre;
 static GtkCssProvider *fournisseur_css;
 
@@ -43,12 +46,34 @@ static void basculer_vers_page(const char *nom_page) {
   gtk_stack_set_visible_child_name(GTK_STACK(pile_principale), nom_page);
 }
 
+static void rafraichir_tableau_de_bord() {
+  Utilisateur *u = auth_obtenir_utilisateur_courant();
+  if (u) {
+    char buf[64];
+    sprintf(buf, "🟢 Facile : %d pts", u->meilleur_score_facile);
+    gtk_label_set_text(GTK_LABEL(label_highscore_facile), buf);
+    sprintf(buf, "🟡 Moyen : %d pts", u->meilleur_score_moyen);
+    gtk_label_set_text(GTK_LABEL(label_highscore_moyen), buf);
+    sprintf(buf, "🔴 Difficile : %d pts", u->meilleur_score_difficile);
+    gtk_label_set_text(GTK_LABEL(label_highscore_difficile), buf);
+  }
+}
+
 // --- Écran de Connexion ---
 
 static void sur_clic_connexion(GtkWidget *widget, gpointer data) {
   const char *user =
       gtk_entry_get_text(GTK_ENTRY(entree_connexion_utilisateur));
   const char *pass = gtk_entry_get_text(GTK_ENTRY(entree_connexion_mdp));
+
+  if (strlen(user) < 3 || strlen(pass) < 3) {
+    GtkStyleContext *ctx = gtk_widget_get_style_context(label_statut_connexion);
+    gtk_style_context_add_class(ctx, "label-erreur");
+    gtk_style_context_remove_class(ctx, "label-succes");
+    gtk_label_set_text(GTK_LABEL(label_statut_connexion),
+                       "⚠️ Nom/Mdp trop court (min 3)");
+    return;
+  }
 
   if (auth_connexion(user, pass)) {
     // Mise à jour Tableau de Bord
@@ -57,19 +82,20 @@ static void sur_clic_connexion(GtkWidget *widget, gpointer data) {
     gtk_label_set_text(GTK_LABEL(label_bienvenue), bienvenue);
 
     // Mise à jour Highscores
-    Utilisateur *u = auth_obtenir_utilisateur_courant();
-    char buf[64];
-    sprintf(buf, "🟢 Facile : %d pts", u->meilleur_score_facile);
-    gtk_label_set_text(GTK_LABEL(label_highscore_facile), buf);
-    sprintf(buf, "🟡 Moyen : %d pts", u->meilleur_score_moyen);
-    gtk_label_set_text(GTK_LABEL(label_highscore_moyen), buf);
-    sprintf(buf, "🔴 Difficile : %d pts", u->meilleur_score_difficile);
-    gtk_label_set_text(GTK_LABEL(label_highscore_difficile), buf);
+    rafraichir_tableau_de_bord();
+
+    GtkStyleContext *ctx = gtk_widget_get_style_context(label_statut_connexion);
+    gtk_style_context_remove_class(ctx, "label-erreur");
+    gtk_style_context_add_class(ctx, "label-succes");
+    gtk_label_set_text(GTK_LABEL(label_statut_connexion), "");
 
     basculer_vers_page("tableau_de_bord");
   } else {
+    GtkStyleContext *ctx = gtk_widget_get_style_context(label_statut_connexion);
+    gtk_style_context_add_class(ctx, "label-erreur");
+    gtk_style_context_remove_class(ctx, "label-succes");
     gtk_label_set_text(GTK_LABEL(label_statut_connexion),
-                       "❌ Nom d'utilisateur ou mot de passe invalide");
+                       "⚠️ Identifiants incorrects");
   }
 }
 
@@ -78,16 +104,16 @@ static void sur_clic_inscription(GtkWidget *widget, gpointer data) {
       gtk_entry_get_text(GTK_ENTRY(entree_connexion_utilisateur));
   const char *pass = gtk_entry_get_text(GTK_ENTRY(entree_connexion_mdp));
 
-  if (strlen(user) < 3 || strlen(pass) < 3) {
-    gtk_label_set_text(GTK_LABEL(label_statut_connexion),
-                       "⚠️ Nom/Mdp trop court");
-    return;
-  }
-
   if (auth_inscription(user, pass)) {
+    GtkStyleContext *ctx = gtk_widget_get_style_context(label_statut_connexion);
+    gtk_style_context_add_class(ctx, "label-succes");
+    gtk_style_context_remove_class(ctx, "label-erreur");
     gtk_label_set_text(GTK_LABEL(label_statut_connexion),
                        "✅ Compte créé ! Veuillez vous connecter.");
   } else {
+    GtkStyleContext *ctx = gtk_widget_get_style_context(label_statut_connexion);
+    gtk_style_context_add_class(ctx, "label-erreur");
+    gtk_style_context_remove_class(ctx, "label-succes");
     gtk_label_set_text(GTK_LABEL(label_statut_connexion),
                        "⚠️ Ce nom d'utilisateur existe déjà");
   }
@@ -131,8 +157,6 @@ static GtkWidget *creer_page_connexion() {
   gtk_box_pack_start(GTK_BOX(boite), boite_boutons, FALSE, FALSE, 10);
 
   label_statut_connexion = gtk_label_new("");
-  gtk_style_context_add_class(
-      gtk_widget_get_style_context(label_statut_connexion), "label-erreur");
   gtk_box_pack_start(GTK_BOX(boite), label_statut_connexion, FALSE, FALSE, 0);
 
   return boite;
@@ -403,7 +427,9 @@ static void sur_changement_case(GtkEditable *editable, gpointer data) {
       if (jeu_courant.difficulte == DIFFICULTE_DIFFICILE &&
           score > u->meilleur_score_difficile)
         u->meilleur_score_difficile = score;
-      sauvegarder_utilisateurs(auth_obtenir_tous_utilisateurs(NULL), 0);
+      int nb_users;
+      Utilisateur *tous_users = auth_obtenir_tous_utilisateurs(&nb_users);
+      sauvegarder_utilisateurs(tous_users, nb_users);
 
       if (id_chrono > 0)
         g_source_remove(id_chrono);
@@ -413,10 +439,12 @@ static void sur_changement_case(GtkEditable *editable, gpointer data) {
       gtk_label_set_text(GTK_LABEL(label_erreurs), msg);
       gtk_style_context_add_class(gtk_widget_get_style_context(label_erreurs),
                                   "label-succes");
+      audio_play_effect(SFX_VICTORY);
     }
   } else {
     gtk_style_context_add_class(ctx, "incorrect");
     gtk_style_context_remove_class(ctx, "correct");
+    audio_play_effect(SFX_ERROR);
 
     if (jeu_courant.vies_restantes != -1) {
       jeu_courant.vies_restantes--;
@@ -427,6 +455,7 @@ static void sur_changement_case(GtkEditable *editable, gpointer data) {
                            "💀 GAME OVER (Plus de vies)");
         gtk_style_context_add_class(gtk_widget_get_style_context(label_erreurs),
                                     "label-erreur");
+        audio_play_effect(SFX_GAMEOVER);
         // Désactiver grille
         for (int i = 0; i < 9; i++)
           for (int j = 0; j < 9; j++)
@@ -441,10 +470,96 @@ static void sur_changement_case(GtkEditable *editable, gpointer data) {
   sauvegarder_jeu(&jeu_courant);
 }
 
+static void afficher_solution_fenetre() {
+  if (fenetre_solution == NULL) {
+    fenetre_solution = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    gtk_window_set_title(GTK_WINDOW(fenetre_solution), "Solution");
+    g_signal_connect(fenetre_solution, "delete-event",
+                     G_CALLBACK(gtk_widget_hide_on_delete), NULL);
+  }
+
+  GtkWidget *grille_solution = gtk_grid_new();
+  gtk_widget_set_halign(grille_solution, GTK_ALIGN_CENTER);
+  gtk_widget_set_valign(grille_solution, GTK_ALIGN_CENTER);
+  gtk_widget_set_margin_top(grille_solution, 20);
+  gtk_widget_set_margin_bottom(grille_solution, 20);
+  gtk_widget_set_margin_start(grille_solution, 20);
+  gtk_widget_set_margin_end(grille_solution, 20);
+  gtk_grid_set_row_spacing(GTK_GRID(grille_solution), 2);
+  gtk_grid_set_column_spacing(GTK_GRID(grille_solution), 2);
+
+  for (int i = 0; i < 9; i++) {
+    for (int j = 0; j < 9; j++) {
+      char buf[2];
+      sprintf(buf, "%d", jeu_courant.solution[i][j]);
+      GtkWidget *label = gtk_label_new(buf);
+
+      GtkStyleContext *ctx = gtk_widget_get_style_context(label);
+      gtk_style_context_add_class(ctx, "case-sudoku");
+
+      GtkWidget *frame = gtk_frame_new(NULL);
+      gtk_container_add(GTK_CONTAINER(frame), label);
+      gtk_widget_set_size_request(frame, 30, 30);
+
+      int haut = (i % 3 == 0 && i != 0) ? 4 : 0;
+      int gauche = (j % 3 == 0 && j != 0) ? 4 : 0;
+      gtk_widget_set_margin_top(frame, haut);
+      gtk_widget_set_margin_start(frame, gauche);
+
+      gtk_grid_attach(GTK_GRID(grille_solution), frame, j, i, 1, 1);
+    }
+  }
+
+  GList *children = gtk_container_get_children(GTK_CONTAINER(fenetre_solution));
+  if (children) {
+    gtk_container_remove(GTK_CONTAINER(fenetre_solution),
+                         GTK_WIDGET(children->data));
+    g_list_free(children);
+  }
+
+  gtk_container_add(GTK_CONTAINER(fenetre_solution), grille_solution);
+  gtk_widget_show_all(fenetre_solution);
+}
+
 static void sur_clic_quitter_jeu(GtkWidget *widget, gpointer data) {
   if (id_chrono > 0)
     g_source_remove(id_chrono);
+
+  sauvegarder_jeu(&jeu_courant);
+  rafraichir_tableau_de_bord();
   basculer_vers_page("tableau_de_bord");
+}
+
+static void sur_clic_remplir_auto(GtkWidget *widget, gpointer data) {
+  for (int i = 0; i < 9; i++) {
+    for (int j = 0; j < 9; j++) {
+      if (jeu_courant.initial[i][j] == 0) {
+        char buf[2];
+        sprintf(buf, "%d", jeu_courant.solution[i][j]);
+
+        // Block signal to prevent spamming checks/saves
+        g_signal_handlers_block_by_func(entrees_jeu[i][j],
+                                        (gpointer)sur_changement_case, NULL);
+        gtk_entry_set_text(GTK_ENTRY(entrees_jeu[i][j]), buf);
+        g_signal_handlers_unblock_by_func(entrees_jeu[i][j],
+                                          (gpointer)sur_changement_case, NULL);
+
+        // Manually update internal state
+        jeu_courant.grille[i][j] = jeu_courant.solution[i][j];
+
+        // Update visual style
+        GtkStyleContext *ctx = gtk_widget_get_style_context(entrees_jeu[i][j]);
+        gtk_style_context_remove_class(ctx, "incorrect");
+        gtk_style_context_add_class(ctx, "correct");
+      }
+    }
+  }
+  // Trigger victory check manually
+  sur_changement_case(GTK_EDITABLE(entrees_jeu[0][0]), NULL);
+}
+
+static void sur_clic_resoudre(GtkWidget *widget, gpointer data) {
+  afficher_solution_fenetre();
 }
 
 static GtkWidget *creer_page_jeu() {
@@ -489,11 +604,26 @@ static GtkWidget *creer_page_jeu() {
   gtk_box_pack_start(GTK_BOX(boite), grille, TRUE, TRUE, 0);
 
   // Pied de page
+  GtkWidget *boite_boutons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+  gtk_widget_set_halign(boite_boutons, GTK_ALIGN_CENTER);
+
+  GtkWidget *btn_resoudre = gtk_button_new_with_label("🧩 Résoudre (Test)");
+  g_signal_connect(btn_resoudre, "clicked", G_CALLBACK(sur_clic_resoudre),
+                   NULL);
+  gtk_box_pack_start(GTK_BOX(boite_boutons), btn_resoudre, FALSE, FALSE, 0);
+
+  GtkWidget *btn_remplir = gtk_button_new_with_label("⚡ Remplir");
+  g_signal_connect(btn_remplir, "clicked", G_CALLBACK(sur_clic_remplir_auto),
+                   NULL);
+  gtk_box_pack_start(GTK_BOX(boite_boutons), btn_remplir, FALSE, FALSE, 0);
+
   GtkWidget *btn_quitter =
       gtk_button_new_with_label("💾 Sauvegarder & Quitter");
   g_signal_connect(btn_quitter, "clicked", G_CALLBACK(sur_clic_quitter_jeu),
                    NULL);
-  gtk_box_pack_start(GTK_BOX(boite), btn_quitter, FALSE, FALSE, 10);
+  gtk_box_pack_start(GTK_BOX(boite_boutons), btn_quitter, FALSE, FALSE, 0);
+
+  gtk_box_pack_start(GTK_BOX(boite), boite_boutons, FALSE, FALSE, 10);
 
   return boite;
 }
@@ -505,9 +635,6 @@ void gui_initialiser(int argc, char **argv) {
   charger_css();
 
   fenetre = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-  gtk_window_set_title(GTK_WINDOW(fenetre), "👑 Sudoku EILCO 👑");
-  gtk_window_set_default_size(GTK_WINDOW(fenetre), 500, 600);
-  g_signal_connect(fenetre, "destroy", G_CALLBACK(gtk_main_quit), NULL);
 
   pile_principale = gtk_stack_new();
   gtk_stack_set_transition_type(GTK_STACK(pile_principale),
@@ -520,6 +647,8 @@ void gui_initialiser(int argc, char **argv) {
   gtk_stack_add_named(GTK_STACK(pile_principale), creer_page_jeu(), "jeu");
 
   gtk_container_add(GTK_CONTAINER(fenetre), pile_principale);
+
+  g_signal_connect(fenetre, "destroy", G_CALLBACK(gtk_main_quit), NULL);
 
   gtk_widget_show_all(fenetre);
   gtk_main();

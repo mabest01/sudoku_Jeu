@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include <string.h>
 
-
 static Utilisateur utilisateurs[MAX_UTILISATEURS];
 static int nombre_utilisateurs = 0;
 static Utilisateur *utilisateur_courant = NULL;
@@ -54,9 +53,9 @@ bool auth_inscription(const char *nom_utilisateur, const char *mot_de_passe) {
   Utilisateur u;
   strcpy(u.nom_utilisateur, nom_utilisateur);
   hacher_mot_de_passe(mot_de_passe, u.mot_de_passe_hache);
-  u.meilleur_score_facile = 999999;
-  u.meilleur_score_moyen = 999999;
-  u.meilleur_score_difficile = 999999;
+  u.meilleur_score_facile = 0;
+  u.meilleur_score_moyen = 0;
+  u.meilleur_score_difficile = 0;
 
   utilisateurs[nombre_utilisateurs++] = u;
   sauvegarder_utilisateurs(utilisateurs, nombre_utilisateurs);
